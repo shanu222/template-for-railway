@@ -38,10 +38,11 @@ COPY --from=builder /app/packages/shared ./packages/shared
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY scripts/start-api.sh ./scripts/start-api.sh
+COPY scripts/migrate.sh ./scripts/migrate.sh
 
-RUN chmod +x ./scripts/start-api.sh \
+RUN chmod +x ./scripts/start-api.sh ./scripts/migrate.sh \
   && chown -R nodejs:nodejs /app
 
 USER nodejs
 EXPOSE 4000
-CMD ["./scripts/start-api.sh"]
+CMD ["node", "apps/api/dist/index.js"]

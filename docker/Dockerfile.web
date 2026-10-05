@@ -17,9 +17,15 @@ COPY --from=deps /app/package.json ./package.json
 COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/web ./apps/web
-ARG NEXT_PUBLIC_API_URL=http://localhost:4000
+# NEXT_PUBLIC_* must be present at build time for the browser bundle.
+# On Railway, set NEXT_PUBLIC_API_URL as a service variable so it is
+# available during the Docker build (do not hardcode a Railway domain).
+ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN if [ -z "$NEXT_PUBLIC_API_URL" ]; then \
+      echo "WARNING: NEXT_PUBLIC_API_URL is empty at build time. Set it before building for production."; \
+    fi
 RUN npm run build -w @repo/shared
 RUN npm run build -w @app/web
 
@@ -27,6 +33,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV HOSTNAME=0.0.0.0
 RUN addgroup -S nodejs \
   && adduser -S nextjs -G nodejs
 
@@ -36,9 +43,5 @@ COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 
 USER nextjs
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:${PORT:-3000}/ || exit 1
-
+# Railway injects PORT at runtime; do not hardcode a production domain.
 CMD ["node", "apps/web/server.js"]

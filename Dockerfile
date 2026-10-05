@@ -39,13 +39,13 @@ COPY --from=builder /app/packages/shared ./packages/shared
 COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY scripts/start-api.sh ./scripts/start-api.sh
+COPY scripts/migrate.sh ./scripts/migrate.sh
 
-RUN chmod +x ./scripts/start-api.sh \
+RUN chmod +x ./scripts/start-api.sh ./scripts/migrate.sh \
   && chown -R nodejs:nodejs /app
 
 USER nodejs
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:${PORT:-4000}/api/health || exit 1
-
-CMD ["./scripts/start-api.sh"]
+# Railway uses deploy.healthcheckPath from railway.json.
+# Migrations are NOT run in CMD; use releaseCommand / scripts/migrate.sh.
+CMD ["node", "apps/api/dist/index.js"]

@@ -57,11 +57,15 @@ flowchart TB
 ├── .env.example
 ├── docker-compose.yml
 ├── Dockerfile               # API production image
-├── railway.json
+├── railway.json             # API Railway config (release migrations + health)
+├── railway.web.json         # Web Railway config (root convenience copy)
+├── RAILWAY_TEMPLATE.md      # Marketplace / Template Composer guide
 ├── package.json
 ├── README.md
 └── LICENSE
 ```
+
+`apps/web/railway.json` is the Config-as-Code file for the `web` service.
 
 ## Features
 
@@ -85,8 +89,8 @@ flowchart TB
 ### 1. Clone
 
 ```bash
-git clone <your-repo-url> railway-fullstack-saas-starter
-cd railway-fullstack-saas-starter
+git clone https://github.com/shanu222/template-for-railway.git
+cd template-for-railway
 ```
 
 ### 2. Install dependencies
@@ -108,7 +112,8 @@ npm run setup
 # or: cp .env.example .env
 ```
 
-Edit `.env` if needed. For local development the defaults match `docker-compose.yml`.
+Edit `.env` if needed. For local development the defaults match `docker-compose.yml`.  
+`npm run setup` generates a local `JWT_SECRET` — never commit `.env`.
 
 ### 5. Run Prisma migrations
 
@@ -116,16 +121,17 @@ Edit `.env` if needed. For local development the defaults match `docker-compose.
 npm run db:migrate:dev
 ```
 
-### 6. Seed the database
+### 6. Seed the database (local/demo only)
 
 ```bash
 npm run db:seed
 ```
 
-Default seed user (override with env vars):
+Seed creates **development/demo data only**. It refuses to run when `NODE_ENV=production` unless `ALLOW_PROD_SEED=true`.  
+Default local demo user (override with env vars):
 
 - Email: `demo@example.com`
-- Password: `DemoPassword123!`
+- Password: from `SEED_USER_PASSWORD` in `.env.example`
 
 ### 7. Start the API
 
@@ -151,16 +157,18 @@ npm run dev
 
 ## Environment variables
 
+### Local development
+
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `REDIS_URL` | No | Redis connection string; enables cache/queue examples |
-| `JWT_SECRET` | Yes | Secret for signing JWTs (min 32 chars) |
+| `JWT_SECRET` | Yes | Secret for signing JWTs (min 32 chars). Generate locally via `npm run setup` |
 | `JWT_EXPIRES_IN` | No | Access token lifetime (default `15m`) |
 | `JWT_REFRESH_EXPIRES_IN` | No | Refresh token lifetime (default `7d`) |
-| `NEXT_PUBLIC_API_URL` | Yes (web) | Browser-reachable API base URL |
+| `NEXT_PUBLIC_API_URL` | Yes (web) | Browser-reachable API base URL (needed at Next.js **build** time) |
 | `CORS_ORIGIN` | Yes (prod) | Allowed frontend origin(s), comma-separated |
-| `PORT` | No | API listen port (Railway injects this) |
+| `PORT` | No | API listen port (Railway injects this in deploy) |
 | `NODE_ENV` | No | `development` / `test` / `production` |
 | `BCRYPT_SALT_ROUNDS` | No | Password hash cost (default `12`) |
 | `RATE_LIMIT_WINDOW_MS` | No | Rate-limit window |
@@ -168,6 +176,19 @@ npm run dev
 | `AUTH_RATE_LIMIT_MAX` | No | Auth endpoint limit |
 
 See [`.env.example`](./.env.example) for placeholders only. Never commit real credentials.
+
+### Railway (reference + generated variables)
+
+| Variable | Service | Value |
+|----------|---------|-------|
+| `DATABASE_URL` | `api` | `${{Postgres.DATABASE_URL}}` |
+| `REDIS_URL` | `api` | `${{Redis.REDIS_URL}}` |
+| `JWT_SECRET` | `api` | `${{secret(64)}}` (auto-generated; never hardcode) |
+| `CORS_ORIGIN` | `api` | `https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
+| `NEXT_PUBLIC_API_URL` | `web` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` |
+| `NODE_ENV` | `api`, `web` | `production` |
+
+Full Template Composer settings: [`RAILWAY_TEMPLATE.md`](./RAILWAY_TEMPLATE.md).
 
 ## API endpoints
 
@@ -235,57 +256,78 @@ If Redis is unavailable, the API still serves health and auth against PostgreSQL
 
 ## Railway deployment
 
-Marketplace metadata lives in [`RAILWAY_TEMPLATE.md`](./RAILWAY_TEMPLATE.md).
+Marketplace-oriented configuration lives in [`RAILWAY_TEMPLATE.md`](./RAILWAY_TEMPLATE.md).
 
-### Create services
+### Architecture on Railway
 
-1. Create a Railway project from this repository.
-2. Add four services/plugins:
-   - **web** (Next.js)
-   - **api** (Express)
-   - **PostgreSQL**
-   - **Redis**
-3. Keep PostgreSQL and Redis private (no public networking).
+| Service | Root directory | Public networking | Role |
+|---------|----------------|-------------------|------|
+| `web` | `/` (repo root) | Yes | Next.js UI |
+| `api` | `/` (repo root) | Yes | Express API |
+| `Postgres` | plugin | **No** | Database via private networking |
+| `Redis` | plugin | **No** | Cache/queue via private networking |
 
-### API service settings
+Both app services use the **repository root** as Root Directory (npm workspaces + shared Prisma). Config-as-code:
 
-- Root directory: `/`
-- Dockerfile: `Dockerfile` (or Builder Dockerfile)
-- Health check path: `/api/health`
-- Start command (Docker CMD already runs migrations): `./scripts/start-api.sh`
+- `api` → `/railway.json`
+- `web` → `/apps/web/railway.json`
 
-Variables:
+### Private networking
+
+- Browser → `web` / `api` over **public HTTPS** (required because `NEXT_PUBLIC_API_URL` is a client-side variable)
+- `api` → Postgres / Redis over **Railway private networking** through plugin URLs
+- Do not enable public networking on Postgres or Redis
+
+### API service variables
 
 ```text
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
-JWT_SECRET=<generate with Railway>
+JWT_SECRET=${{secret(64)}}
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 CORS_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
 NODE_ENV=production
 ```
 
-Railway provides `PORT` automatically. The API listens on `process.env.PORT`.
+- Health check: `/api/health`
+- Start command: `node apps/api/dist/index.js`
+- Listens on `process.env.PORT` (injected by Railway)
 
-### Web service settings
-
-- Dockerfile: `docker/Dockerfile.web`
-- Or Nixpacks/Node with start command `npm run start -w @app/web`
-
-Variables:
+### Web service variables
 
 ```text
 NEXT_PUBLIC_API_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}
 NODE_ENV=production
 ```
 
-Build argument / env note: `NEXT_PUBLIC_API_URL` must be available at build time for the Next.js client bundle.
+- Health check: `/`
+- Dockerfile: `docker/Dockerfile.web`
+- `NEXT_PUBLIC_API_URL` must be present at **build time**; rebuild `web` if the API domain changes
+- Do not hardcode a Railway public domain
+
+### Database migrations on Railway
+
+Migrations run **once per deploy** via the API service `releaseCommand` in `railway.json`:
+
+```text
+npx prisma migrate deploy --schema=prisma/schema.prisma
+```
+
+They are **not** executed on every container/replica start. That avoids migration races when scaling replicas.
+
+Local production-style migrate:
+
+```bash
+npm run db:migrate
+```
+
+Do not seed on Railway as part of deploy. Seed is local/demo only.
 
 ### After deploy
 
-1. Confirm `GET https://<api-domain>/api/health` returns `{ "status": "ok" }`.
-2. Open the web URL and register a user.
+1. Confirm `GET https://<api-public-domain>/api/health` returns `{ "status": "ok" }`.
+2. Open the web public URL and register a user (no demo login required).
 3. Verify the dashboard shows API/database status (and Redis when configured).
 
 ## Docker
@@ -350,19 +392,22 @@ Set `CORS_ORIGIN` to the exact frontend origin, including protocol.
 Check `NEXT_PUBLIC_API_URL` and rebuild the web app after changing it.
 
 **Prisma migrate fails on Railway**  
-Confirm the API service has `DATABASE_URL` from the Postgres plugin and can reach it over private networking.
+Confirm the API service has `DATABASE_URL=${{Postgres.DATABASE_URL}}`, private networking to Postgres works, and `releaseCommand` is set (see `railway.json`).
+
+**Web build has wrong/empty API URL**  
+`NEXT_PUBLIC_API_URL` must be set on the `web` service before build, then rebuild. Client bundles do not pick up runtime-only changes to `NEXT_PUBLIC_*`.
 
 ## Production deployment checklist
 
-- [ ] Strong unique `JWT_SECRET` generated (not committed)
-- [ ] `DATABASE_URL` from Railway Postgres reference variable
-- [ ] `REDIS_URL` from Railway Redis reference variable (recommended)
-- [ ] `CORS_ORIGIN` set to the deployed web URL
-- [ ] `NEXT_PUBLIC_API_URL` set to the deployed API URL
+- [ ] `JWT_SECRET=${{secret(64)}}` (not hardcoded, not committed)
+- [ ] `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+- [ ] `REDIS_URL=${{Redis.REDIS_URL}}`
+- [ ] `CORS_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}`
+- [ ] `NEXT_PUBLIC_API_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`
 - [ ] Postgres and Redis not publicly exposed
-- [ ] API health check configured to `/api/health`
-- [ ] Migrations run on deploy (`scripts/start-api.sh`)
-- [ ] Seed only used for demos; disable or change defaults in production
+- [ ] API health check `/api/health`; web health check `/`
+- [ ] Migrations via `releaseCommand` only (not per-replica start)
+- [ ] Seed not run in production deploys
 - [ ] Review rate limits and cookie/SameSite settings for your domain setup
 
 ## Quality commands
@@ -382,7 +427,9 @@ MIT — see [LICENSE](./LICENSE).
 
 ## Marketplace summary
 
+See [`RAILWAY_TEMPLATE.md`](./RAILWAY_TEMPLATE.md) for the full Composer checklist.
+
 **Name:** Production Full-Stack SaaS Starter  
-**Short description:** Deploy a full-stack Next.js and Node.js application with PostgreSQL, Prisma, Redis, authentication, and Railway-ready infrastructure.  
-**Category:** Starters / Full Stack  
-**Tags:** Next.js, Node.js, TypeScript, PostgreSQL, Redis, Prisma, SaaS, Full Stack, Authentication, REST API
+**Description:** Deploy a reusable full-stack starter with Next.js, Node.js, PostgreSQL, Prisma, Redis, authentication, and Railway-ready infrastructure.  
+**Category:** Starters  
+**Tags:** Next.js, Node.js, TypeScript, PostgreSQL, Redis, Prisma, SaaS, Authentication, REST API, Full Stack

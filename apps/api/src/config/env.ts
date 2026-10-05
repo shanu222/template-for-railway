@@ -12,7 +12,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   API_HOST: z.string().default("0.0.0.0"),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  REDIS_URL: z.string().optional(),
+  // Treat blank values as unset so local .env placeholders / CI overrides work cleanly.
+  REDIS_URL: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() ? value.trim() : undefined)),
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be at least 32 characters"),
