@@ -1,0 +1,10 @@
+{
+  "name": "@repo/config",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared configuration helpers for the monorepo.",
+  "files": [
+    "eslint.base.cjs",
+    "tsconfig.base.json"
+  ]
+}

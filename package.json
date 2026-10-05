@@ -1,0 +1,56 @@
+{
+  "name": "railway-fullstack-saas-starter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-oriented full-stack starter with Next.js, Node.js, PostgreSQL, Prisma, Redis, and Railway-ready infrastructure.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @app/api\" \"npm run dev -w @app/web\"",
+    "dev:api": "npm run dev -w @app/api",
+    "dev:web": "npm run dev -w @app/web",
+    "build": "npm run build -w @app/api && npm run build -w @app/web",
+    "build:api": "npm run build -w @app/api",
+    "build:web": "npm run build -w @app/web",
+    "start:api": "npm run start -w @app/api",
+    "start:web": "npm run start -w @app/web",
+    "lint": "npm run lint -w @app/api && npm run lint -w @app/web",
+    "typecheck": "npm run typecheck -w @app/api && npm run typecheck -w @app/web && npm run typecheck -w @repo/shared",
+    "test": "npm run test -w @app/api",
+    "test:integration": "node scripts/integration-test.mjs",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "db:migrate:dev": "prisma migrate dev --schema=prisma/schema.prisma",
+    "db:push": "prisma db push --schema=prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio --schema=prisma/schema.prisma",
+    "db:validate": "prisma validate --schema=prisma/schema.prisma",
+    "postinstall": "prisma generate --schema=prisma/schema.prisma && npm run build -w @repo/shared",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "setup": "node scripts/setup.js"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.0",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "prisma": "^6.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
